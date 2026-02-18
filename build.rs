@@ -270,6 +270,56 @@ fn install_user_hook(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+fn install_submodule_user_hooks(git_dir: &Path) -> Result<()> {
+    let submodule_hooks_dir = {
+        let mut p = git_dir.to_owned();
+        p.pop();
+        p.push(".cargo-husky");
+        p.push("submodule-hooks");
+        p
+    };
+
+    println!("cargo:rerun-if-changed={}", submodule_hooks_dir.display());
+
+    if !submodule_hooks_dir.is_dir() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&submodule_hooks_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+
+        let submodule_name = entry.file_name();
+        let submodule_hooks_src = entry.path();
+
+        let submodule_git_dir = git_dir.join("modules").join(&submodule_name);
+        if !submodule_git_dir.is_dir() {
+            eprintln!(
+                "Warning: Submodule git dir not found for {:?} at {:?}, skipping",
+                submodule_name, submodule_git_dir
+            );
+            continue;
+        }
+
+        let hooks_dir = submodule_git_dir.join("hooks");
+        if !hooks_dir.is_dir() {
+            fs::create_dir_all(&hooks_dir)?;
+        }
+
+        let hook_paths = fs::read_dir(&submodule_hooks_src)?
+            .filter_map(|e| e.ok().filter(is_executable_file).map(|e| e.path()))
+            .collect::<Vec<_>>();
+
+        for path in hook_paths {
+            install_user_hook(&path, &hooks_dir)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn is_executable_file(entry: &fs::DirEntry) -> bool {
     match entry.file_type() {
@@ -326,6 +376,8 @@ fn install_user_hooks() -> Result<()> {
     for path in hook_paths {
         install_user_hook(&path, &hooks_dir)?;
     }
+
+    install_submodule_user_hooks(&git_dir)?;
 
     Ok(())
 }

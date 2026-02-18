@@ -535,3 +535,93 @@ fn empty_script_file_not_allowed() {
     let err = run_cargo(&root, &["test"]).unwrap_err();
     assert!(format!("{}", err).contains("User hook script is empty"));
 }
+
+fn submodule_hook_path(root: &Path, submodule: &str, hook: &str) -> PathBuf {
+    root.join(".git")
+        .join("modules")
+        .join(submodule)
+        .join("hooks")
+        .join(hook)
+}
+
+fn get_submodule_hook_script(root: &Path, submodule: &str, hook: &str) -> Option<String> {
+    let path = submodule_hook_path(root, submodule, hook);
+    let mut f = File::open(path).ok()?;
+    let mut s = String::new();
+    f.read_to_string(&mut s).unwrap();
+    Some(s)
+}
+
+#[test]
+fn submodule_user_hooks() {
+    let root = cargo_project_for("submodule-user-hooks");
+    setup_user_hooks_feature(&root);
+
+    // Copy main repo user hooks (required by user-hooks feature)
+    let user_hooks = TESTDIR.join("user-hooks");
+    copy_dir_recursive(&user_hooks.join(".cargo-husky"), &root.join(".cargo-husky"));
+
+    // Copy submodule hooks
+    let submodule_hooks = TESTDIR.join("submodule-hooks");
+    copy_dir_recursive(
+        &submodule_hooks
+            .join(".cargo-husky")
+            .join("submodule-hooks"),
+        &root.join(".cargo-husky").join("submodule-hooks"),
+    );
+
+    // Simulate a submodule git dir structure: .git/modules/test-sub/
+    let submodule_git_dir = root.join(".git").join("modules").join("test-sub");
+    fs::create_dir_all(&submodule_git_dir).unwrap();
+
+    run_cargo(&root, &["test"]).unwrap();
+
+    // Verify the submodule hook was installed
+    let script = get_submodule_hook_script(&root, "test-sub", "pre-commit").unwrap();
+    assert!(script.contains("submodule hook"));
+
+    let check_line = format!(
+        "# This hook was set by cargo-husky v{}: {} (content hash: ",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_HOMEPAGE")
+    );
+    assert!(script.lines().nth(2).unwrap().starts_with(check_line.as_str()));
+}
+
+#[test]
+fn submodule_hooks_skipped_when_dir_missing() {
+    let root = cargo_project_for("submodule-hooks-no-dir");
+    setup_user_hooks_feature(&root);
+
+    // Copy main repo user hooks only — no submodule-hooks dir
+    let user_hooks = TESTDIR.join("user-hooks");
+    copy_dir_recursive(&user_hooks.join(".cargo-husky"), &root.join(".cargo-husky"));
+
+    // Should succeed without errors (submodule-hooks dir is optional)
+    run_cargo(&root, &["test"]).unwrap();
+}
+
+#[test]
+fn submodule_hooks_warns_on_missing_submodule() {
+    let root = cargo_project_for("submodule-hooks-missing-sub");
+    setup_user_hooks_feature(&root);
+
+    // Copy main repo user hooks
+    let user_hooks = TESTDIR.join("user-hooks");
+    copy_dir_recursive(&user_hooks.join(".cargo-husky"), &root.join(".cargo-husky"));
+
+    // Copy submodule hooks but do NOT create .git/modules/test-sub/
+    let submodule_hooks = TESTDIR.join("submodule-hooks");
+    copy_dir_recursive(
+        &submodule_hooks
+            .join(".cargo-husky")
+            .join("submodule-hooks"),
+        &root.join(".cargo-husky").join("submodule-hooks"),
+    );
+
+    // Should succeed (warning only, not an error)
+    run_cargo(&root, &["test"]).unwrap();
+
+    // Hook should NOT be installed since the submodule git dir doesn't exist
+    assert!(!submodule_hook_path(&root, "test-sub", "pre-commit").exists());
+}

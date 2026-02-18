@@ -1,0 +1,3 @@
+#!/bin/sh
+# Submodule pre-commit hook for testing
+echo "submodule hook"

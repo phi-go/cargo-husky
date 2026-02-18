@@ -124,6 +124,35 @@ Note that, when `user-hooks` feature is enabled, other all features are disabled
 all hooks in `.cargo-husky/hooks` directory.
 
 
+### Submodule Hooks
+
+When `user-hooks` is enabled, you can also install hooks into git submodules. Create a
+`.cargo-husky/submodule-hooks/<submodule-name>/` directory (where `<submodule-name>` matches the
+directory name under `.git/modules/`) and place your executable hook scripts there.
+
+e.g.
+
+```
+your-repository/
+├── .git
+│   └── modules
+│       └── my-submodule
+│           └── pre-commit
+├── .cargo-husky
+│   ├── hooks
+│   │   └── pre-commit
+│   └── submodule-hooks
+│       └── my-submodule
+│           └── pre-commit
+└── my-submodule
+```
+
+Submodule hooks are optional — if the `.cargo-husky/submodule-hooks/` directory does not exist, it is
+silently skipped. If a submodule entry is defined but the corresponding `.git/modules/<name>/`
+directory is missing (e.g. the submodule is not initialized), a warning is printed and that submodule
+is skipped.
+
+
 ## Ignore Installing Hooks
 
 When you don't want to install hooks for some reason, please set `$CARGO_HUSKY_DONT_INSTALL_HOOKS`
